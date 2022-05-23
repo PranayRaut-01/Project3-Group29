@@ -2,6 +2,37 @@ const mongoose = require("mongoose");
 const bookModel = require("../models/BooksModel");
 const userModel = require("../models/userModel");
 const reviewModel = require("../models/reviewModel");
+const aws = require('aws-sdk')
+
+aws.config.update({
+  accessKeyId: "AKIAY3L35MCRUJ6WPO6J",
+  secretAccessKeyId: "7gq2ENIfbMVs0jYmFFsoJnh/hhQstqPBNmaX9Io1",
+  region: "ap-south-1"
+})
+
+let uploadFile = async (file) => {
+  return new Promise( function(resolve, reject) {
+    
+      let s3 = new aws.S3({ apiVersion: "2006-03-01" })
+  
+      var uploadParams = {
+          ACL: "public-read",
+          Bucket: "classroom-training-bucket", 
+          Key: "Bookcover/" + file.originalname,
+          Body: file.buffer
+      }
+
+    s3.upload(uploadParams, function (err, data) {
+          if (err) { 
+              return reject({ "error": err }) 
+          }
+          return resolve(data.Location) 
+        }
+      )
+  }
+  )
+}
+
 
 const createBook = async function (req, res) {
   try {
@@ -77,6 +108,51 @@ const createBook = async function (req, res) {
     return res.status(500).send({ status: false, message: err.message });
   }
 };
+
+
+//________________CREATE BOOK COVER_______________________//
+
+const createBookCover = async function (req, res) {
+  try {
+    let bookId = req.params.bookId;
+
+    const bookDetails = await bookModel.findOne({
+      _id: bookId,
+      isDeleted: false,
+    });
+
+    if (!bookDetails) {
+      return res.status(404).send({ status: true, msg: "NO Book with this Id" }); //If no Books found in bookModel
+    }
+
+    if(bookDetails.bookCover) return res.status(400).send({status:false,message:"Book Cover Already Exists"})
+
+    let files = req.files
+    if (files && files.length > 0) {
+        const uploadedFileURL = await uploadFile(files[0])
+
+        const updatedDetails = await bookModel.findOneAndUpdate(
+          { _id: bookId }, //Find the bookId
+          { bookCover: uploadedFileURL },
+          { new: true, upsert: true }
+        )
+  
+        res.status(201).send({
+          status: true,
+          msg: "book cover added successfully",
+          data: updatedDetails,
+        });
+    }
+    else {
+        res.status(400).send({ msg: "No file found" })
+    }
+    
+    
+  } catch (err) {
+    res.status(500).send({ msg: err.message });
+  }
+};
+
 
 //get API for book with Query param//
 const getBook = async function (req, res) {
@@ -252,6 +328,7 @@ const delBook = async function (req, res) {
 };
 
 module.exports.createBook = createBook;
+module.exports.createBookCover = createBookCover;
 module.exports.getBook = getBook;
 module.exports.getBookByPathParam = getBookByPathParam;
 module.exports.updateBook = updateBook;
